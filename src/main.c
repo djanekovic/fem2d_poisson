@@ -14,22 +14,24 @@
  *  - solver choice
  *  - debug
  */
+
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 #include <lapacke.h>
 
-#define REAL double
+#include "util.h"
 #include "triangle/triangle.h"
+
+#define likely(x)       __builtin_expect(!!(x), 1)
+#define unlikely(x)     __builtin_expect(!!(x), 0)
 
 static void compute_localA(int *point_id, REAL *pointlist, REAL *matrix);
 static void compute_localF(int *point_id, REAL *pointlist, REAL *matrix);
-static void print_local_matrix(REAL *matrix);
-static void print_global_matrix(REAL *matrix, int num_elements, bool num);
 static void generate_mesh(struct triangulateio *io, struct triangulateio *out);
-static void print_solution(double *matrix, int n);
 static REAL boundary_condition(int point_id, struct triangulateio *out);
 static REAL exact_solution(int point_id, struct triangulateio *out);
 
@@ -44,21 +46,25 @@ int main(int argc, char **argv)
 
     num_of_points = out.numberofpoints;
 
+    /**
+     * Allocate all matrix data structures
+     */
     global_A = malloc(num_of_points * num_of_points * sizeof(REAL));
     global_F = malloc(num_of_points * sizeof(REAL));
     local_A = malloc(3 * 3 * sizeof(REAL));
     local_F = malloc(3 * 3 * sizeof(REAL));
 
-    if (global_A == NULL || global_F == NULL || local_A == NULL ||
-        local_F == NULL) {
-        printf("Memory allocation failed\n");
-        // todo goto mem free
-        return 1;
-    }
+    assert(global_A != NULL);
+    assert(global_F != NULL);
+    assert(local_A != NULL);
+    assert(local_F != NULL);
 
     memset(global_A, 0, num_of_points * num_of_points * sizeof(REAL));
     memset(global_F, 0, num_of_points * sizeof(REAL));
 
+    /**
+     * Matrix assembly without boundary conditions
+     */
     for (int n = 0; n < out.numberoftriangles; n++) {
         // three points that describe triangle
         int point_id[3];
@@ -90,7 +96,7 @@ int main(int argc, char **argv)
             global_A[i * num_of_points + j] = 0;
             global_A[j * num_of_points + i] = 0;
         }
-        global_A[i * num_of_points + i] = 1;
+        global_A[i * num_of_points + i] = 1.0;
         global_F[i] = boundary_condition(i, &out);
     }
 
@@ -122,7 +128,7 @@ int main(int argc, char **argv)
     printf("\nSolution in point vs exact solution\n");
     for (int i = 0; i < num_of_points; i++) {
         double temp = exact_solution(i, &out);
-        printf("%lf  \t  %lf\n", temp, global_F[i]);
+        printf("%lf  \t  %lf  \t  %lf\n", temp, global_F[i], temp-global_F[i]);
     }
 
     /* free all Triangle data structures */
@@ -197,7 +203,7 @@ static void generate_mesh(struct triangulateio *in, struct triangulateio *out)
      * neighbor list (n), be quiet (Q), area should be less than 0.1 (a.1)
      * and generate triangle for FEM (q).
      */
-    triangulate("pzceQna.1q", in, out, (struct triangulateio *) NULL);
+    triangulate("pzceQna.01q", in, out, (struct triangulateio *) NULL);
 }
 
 static void compute_localA(int *point_id, REAL *pointlist, REAL *matrix)
@@ -247,8 +253,8 @@ static void compute_localF(int *point_id, REAL *pointlist, REAL *matrix)
     REAL dy12 = y1 - y2;
 
     REAL area = 0.5 * (dx31 * dy12 - dy31 * dx12);
-    REAL c_diag = area / 6;
-    REAL c_off = area / 12;
+    REAL c_diag = area / 6.0;
+    REAL c_off = area / 12.0;
 
     for (int i = 0; i < 3; i++) {
         for (int j = 0; j < 3; j++)
@@ -272,27 +278,4 @@ static REAL boundary_condition(int point_id, struct triangulateio *out)
     REAL x = out->pointlist[2 * point_id];
     REAL y = out->pointlist[2 * point_id + 1];
     return 1 + x * x + 2 * y * y;
-}
-
-static void print_local_matrix(REAL *matrix)
-{
-    for (int i = 0; i < 3; i++) {
-        for (int j = 0; j < 3; j++) {
-            printf("%lf ", matrix[i * 3 + j]);
-        }
-        printf("\n");
-    }
-}
-
-static void print_global_matrix(REAL *matrix, int num_elements, bool num)
-{
-    for (int i = 0; i < num_elements; i++) {
-        for (int j = 0; j < num_elements; j++) {
-            if (num)
-                printf("%lf ", matrix[i * num_elements + j]);
-            else
-                printf("%c ", (matrix[i * num_elements + j]) ? 'X' : '0');
-        }
-        printf("\n");
-    }
 }
