@@ -2,7 +2,7 @@ SRC = ./src/
 BIN = ./bin/
 CC  = gcc
 RM = /bin/rm
-CFLAGS = -g -lm -Wall -Wextra
+CFLAGS = -g -lm -Wall -Wextra -llapacke
 
 all: $(BIN)poisson
 
