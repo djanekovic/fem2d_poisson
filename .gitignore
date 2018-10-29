@@ -52,4 +52,5 @@ Mkfile.old
 dkms.conf
 
 # bin folder
-./bin/*
+bin/poisson
+src/triangle/tricall
