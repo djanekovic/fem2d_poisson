@@ -15,36 +15,90 @@
  *  - debug
  */
 
+#include <assert.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
 
 #include <lapacke.h>
 
 #include "util.h"
 #include "triangle/triangle.h"
 
-#define likely(x)       __builtin_expect(!!(x), 1)
-#define unlikely(x)     __builtin_expect(!!(x), 0)
+#define F 6.0
 
-static void compute_localA(int *point_id, REAL *pointlist, REAL *matrix);
-static void compute_localF(int *point_id, REAL *pointlist, REAL *matrix);
+#define likely(x) __builtin_expect(!!(x), 1)
+#define unlikely(x) __builtin_expect(!!(x), 0)
+
+#define DEBUG(global_A, global_F, num_of_points)                    \
+    do {                                                            \
+        printf ("\n");                                              \
+        print_Ax_b(global_A, global_F, num_of_points);              \
+    } while (0)
+
+#define COMPUTE_LOCAL_A(point_id, pointlist, matrix)                \
+    do {                                                            \
+        REAL x1 = pointlist[2 * point_id[0]];                       \
+        REAL y1 = pointlist[2 * point_id[0] + 1];                   \
+        REAL x2 = pointlist[2 * point_id[1]];                       \
+        REAL y2 = pointlist[2 * point_id[1] + 1];                   \
+        REAL x3 = pointlist[2 * point_id[2]];                       \
+        REAL y3 = pointlist[2 * point_id[2] + 1];                   \
+        REAL dx23 = x2 - x3;                                        \
+        REAL dy23 = y2 - y3;                                        \
+        REAL dx31 = x3 - x1;                                        \
+        REAL dy31 = y3 - y1;                                        \
+        REAL dx12 = x1 - x2;                                        \
+        REAL dy12 = y1 - y2;                                        \
+        REAL area = 0.5 * (dx31 * dy12 - dy31 * dx12);              \
+        matrix[0] = 0.25 * (dx23 * dx23 + dy23 * dy23) / area;      \
+        matrix[1] = 0.25 * (dx23 * dx31 + dy23 * dy31) / area;      \
+        matrix[2] = 0.25 * (dx23 * dx12 + dy23 * dy12) / area;      \
+        matrix[3] = 0.25 * (dx31 * dx23 + dy31 * dy23) / area;      \
+        matrix[4] = 0.25 * (dx31 * dx31 + dy31 * dy31) / area;      \
+        matrix[5] = 0.25 * (dx31 * dx12 + dy31 * dy12) / area;      \
+        matrix[6] = 0.25 * (dx12 * dx23 + dy12 * dy23) / area;      \
+        matrix[7] = 0.25 * (dx12 * dx31 + dy12 * dy31) / area;      \
+        matrix[8] = 0.25 * (dx12 * dx12 + dy12 * dy12) / area;      \
+    } while(0)
+
+#define COMPUTE_LOCAL_F(point_id, pointlist, matrix)                \
+    do {                                                            \
+        REAL x1 = pointlist[2 * point_id[0]];                       \
+        REAL y1 = pointlist[2 * point_id[0] + 1];                   \
+        REAL x2 = pointlist[2 * point_id[1]];                       \
+        REAL y2 = pointlist[2 * point_id[1] + 1];                   \
+        REAL x3 = pointlist[2 * point_id[2]];                       \
+        REAL y3 = pointlist[2 * point_id[2] + 1];                   \
+        REAL dx31 = x3 - x1;                                        \
+        REAL dy31 = y3 - y1;                                        \
+        REAL dx12 = x1 - x2;                                        \
+        REAL dy12 = y1 - y2;                                        \
+        REAL area = 0.5 * (dx31 * dy12 - dy31 * dx12);              \
+        REAL c_diag = area / 6.0;                                   \
+        REAL c_off = area / 12.0;                                   \
+        matrix[0] = c_diag; matrix[1] = c_off;  matrix[2] = c_off;  \
+        matrix[3] = c_off;  matrix[4] = c_diag; matrix[5] = c_off;  \
+        matrix[6] = c_off;  matrix[7] = c_off;  matrix[8] = c_diag; \
+    } while(0)
+
 static void generate_mesh(struct triangulateio *io, struct triangulateio *out);
-static REAL boundary_condition(int point_id, struct triangulateio *out);
-static REAL exact_solution(int point_id, struct triangulateio *out);
+static REAL boundary_condition(uint point_id, struct triangulateio *out);
+static REAL exact_solution(uint point_id, struct triangulateio *out);
 
 int main(int argc, char **argv)
 {
     struct triangulateio in, out;
-    int num_of_points;
+    uint num_of_points;
+    uint num_of_triangles;
     REAL *local_A, *local_F, *global_A, *global_F;
 
     /* generate geometry */
     generate_mesh(&in, &out);
 
     num_of_points = out.numberofpoints;
+    num_of_triangles = out.numberoftriangles;
 
     /**
      * Allocate all matrix data structures
@@ -65,34 +119,27 @@ int main(int argc, char **argv)
     /**
      * Matrix assembly without boundary conditions
      */
-    for (int n = 0; n < out.numberoftriangles; n++) {
+    for (size_t n = 0; n < num_of_triangles; n++) {
         // three points that describe triangle
-        int point_id[3];
+        uint point_id[3];
         memcpy(point_id, &out.trianglelist[n * 3], 3 * sizeof(int));
-        compute_localA(point_id, out.pointlist, local_A);
-        compute_localF(point_id, out.pointlist, local_F);
+        COMPUTE_LOCAL_A(point_id, out.pointlist, local_A);
+        COMPUTE_LOCAL_F(point_id, out.pointlist, local_F);
 
-        for (int i = 0; i < 3; i++) {
+        for (size_t i = 0; i < 3; i++) {
             int i1 = point_id[i];
             for (int j = 0; j < 3; j++) {
                 int j1 = point_id[j];
                 global_A[i1 * num_of_points + j1] += local_A[i * 3 + j];
-                global_F[i1] += local_F[i * 3 + j] * -6.0;
+                global_F[i1] += local_F[i * 3 + j] * F;
             }
         }
     }
 
-    print_global_matrix(global_A, num_of_points, false);
-    printf("\n");
-
-    for (int i = 0; i < num_of_points; i++) {
-        // zero if not a boundary -> will happen more often
-        if (out.pointmarkerlist[i] == 0) {
-            continue;
-        }
-        for (int j = 0; j < num_of_points; j++) {
-            global_F[j] -=
-                global_A[j * num_of_points + i] * boundary_condition(i, &out);
+    for (size_t i = 0; i < num_of_points; i++) {
+        for (size_t j = 0; j < num_of_points; j++) {
+            // todo define boundary_condition
+            global_F[j] -= global_A[j * num_of_points + i] * boundary_condition(i, &out);
             global_A[i * num_of_points + j] = 0;
             global_A[j * num_of_points + i] = 0;
         }
@@ -100,10 +147,9 @@ int main(int argc, char **argv)
         global_F[i] = boundary_condition(i, &out);
     }
 
-    print_global_matrix(global_A, num_of_points, false);
 
     /*************************************************************************
-     * Solve Ax = b
+     ************************ Solve Ax = b ***********************************
      *************************************************************************/
     int ipiv[num_of_points];
     int info = LAPACKE_dgesv(LAPACK_ROW_MAJOR,
@@ -126,9 +172,10 @@ int main(int argc, char **argv)
     }
 
     printf("\nSolution in point vs exact solution\n");
-    for (int i = 0; i < num_of_points; i++) {
+    for (size_t i = 0; i < num_of_points; i++) {
         double temp = exact_solution(i, &out);
-        printf("%lf  \t  %lf  \t  %lf\n", temp, global_F[i], temp-global_F[i]);
+        printf(
+            "%lf  \t  %lf  \t  %lf\n", temp, global_F[i], temp - global_F[i]);
     }
 
     /* free all Triangle data structures */
@@ -206,76 +253,16 @@ static void generate_mesh(struct triangulateio *in, struct triangulateio *out)
     triangulate("pzceQna.01q", in, out, (struct triangulateio *) NULL);
 }
 
-static void compute_localA(int *point_id, REAL *pointlist, REAL *matrix)
-{
-    REAL x1 = pointlist[2 * point_id[0]];
-    REAL y1 = pointlist[2 * point_id[0] + 1];
-    REAL x2 = pointlist[2 * point_id[1]];
-    REAL y2 = pointlist[2 * point_id[1] + 1];
-    REAL x3 = pointlist[2 * point_id[2]];
-    REAL y3 = pointlist[2 * point_id[2] + 1];
-
-    REAL dx23 = x2 - x3;
-    REAL dy23 = y2 - y3;
-    REAL dx31 = x3 - x1;
-    REAL dy31 = y3 - y1;
-    REAL dx12 = x1 - x2;
-    REAL dy12 = y1 - y2;
-
-    REAL area = 0.5 * (dx31 * dy12 - dy31 * dx12);
-
-    matrix[0] = 0.25 * (dx23 * dx23 + dy23 * dy23) / area;
-    matrix[1] = 0.25 * (dx23 * dx31 + dy23 * dy31) / area;
-    matrix[2] = 0.25 * (dx23 * dx12 + dy23 * dy12) / area;
-
-    matrix[3] = 0.25 * (dx31 * dx23 + dy31 * dy23) / area;
-    matrix[4] = 0.25 * (dx31 * dx31 + dy31 * dy31) / area;
-    matrix[5] = 0.25 * (dx31 * dx12 + dy31 * dy12) / area;
-
-    matrix[6] = 0.25 * (dx12 * dx23 + dy12 * dy23) / area;
-    matrix[7] = 0.25 * (dx12 * dx31 + dy12 * dy31) / area;
-    matrix[8] = 0.25 * (dx12 * dx12 + dy12 * dy12) / area;
-}
-
-static void compute_localF(int *point_id, REAL *pointlist, REAL *matrix)
-{
-
-    REAL x1 = pointlist[2 * point_id[0]];
-    REAL y1 = pointlist[2 * point_id[0] + 1];
-    REAL x2 = pointlist[2 * point_id[1]];
-    REAL y2 = pointlist[2 * point_id[1] + 1];
-    REAL x3 = pointlist[2 * point_id[2]];
-    REAL y3 = pointlist[2 * point_id[2] + 1];
-
-    REAL dx31 = x3 - x1;
-    REAL dy31 = y3 - y1;
-    REAL dx12 = x1 - x2;
-    REAL dy12 = y1 - y2;
-
-    REAL area = 0.5 * (dx31 * dy12 - dy31 * dx12);
-    REAL c_diag = area / 6.0;
-    REAL c_off = area / 12.0;
-
-    for (int i = 0; i < 3; i++) {
-        for (int j = 0; j < 3; j++)
-            matrix[i * 3 + j] = c_off;
-    }
-
-    matrix[0] = c_diag;
-    matrix[4] = c_diag;
-    matrix[8] = c_diag;
-}
-
-static REAL exact_solution(int point_id, struct triangulateio *out)
+static REAL exact_solution(uint point_id, struct triangulateio *out)
 {
     REAL x = out->pointlist[2 * point_id];
     REAL y = out->pointlist[2 * point_id + 1];
-    return 1 + x * x + 2 * y * y;
+    return 1.0 + x * x + 2.0 * y * y;
 }
 
-static REAL boundary_condition(int point_id, struct triangulateio *out)
+static REAL boundary_condition(uint point_id, struct triangulateio *out)
 {
     REAL x = out->pointlist[2 * point_id];
     REAL y = out->pointlist[2 * point_id + 1];
-    return 1 + x * x + 2 * y * y;
+    return 1.0 + x * x + 2.0 * y * y;
 }
