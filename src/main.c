@@ -1,5 +1,5 @@
 /**
- * Finite element method solver. This solver solves laplace(u) = -6 on square
+ * Finite element method solver. This solver solves laplace(u) = 6 on square
  * [0, 1]x[0, 1]. Boundary conditions are set to be 1 + x^2 + 2y^2.
  *
  * Exact solution of this problem is 1 + x^2 + 2y^2. We will test against this
@@ -26,16 +26,11 @@
 #include "util.h"
 #include "triangle/triangle.h"
 
-#define F 6.0
+#define F -6.0
 
 #define likely(x) __builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)
 
-#define DEBUG(global_A, global_F, num_of_points)                    \
-    do {                                                            \
-        printf ("\n");                                              \
-        print_Ax_b(global_A, global_F, num_of_points);              \
-    } while (0)
 
 #define COMPUTE_LOCAL_A(point_id, pointlist, matrix)                \
     do {                                                            \
@@ -97,6 +92,30 @@ int main(int argc, char **argv)
     /* generate geometry */
     generate_mesh(&in, &out);
 
+    double tmp[] = {
+        0.0, 0.0,
+        0.5, 0.0,
+        1.0, 0.0,
+        0.0, 0.5,
+        0.5, 0.5,
+        1.0, 0.5,
+        0.0, 1.0,
+        0.5, 1.0,
+        1.0, 1.0
+    };
+    //memcpy(out.pointlist, tmp, sizeof(tmp));
+
+    int tmp2[] = {
+        0, 1, 3,
+        4, 3, 1,
+        1, 2, 4,
+        5, 4, 2,
+        3, 4, 6,
+        7, 6, 4,
+        4, 5, 7,
+        8, 7, 5};
+    //memcpy(out.trianglelist, tmp2, sizeof(tmp2));
+
     num_of_points = out.numberofpoints;
     num_of_triangles = out.numberoftriangles;
 
@@ -137,14 +156,15 @@ int main(int argc, char **argv)
     }
 
     for (size_t i = 0; i < num_of_points; i++) {
-        for (size_t j = 0; j < num_of_points; j++) {
-            // todo define boundary_condition
-            global_F[j] -= global_A[j * num_of_points + i] * boundary_condition(i, &out);
-            global_A[i * num_of_points + j] = 0;
-            global_A[j * num_of_points + i] = 0;
+        if (out.pointmarkerlist[i] == 1) {
+            for (size_t j = 0; j < num_of_points; j++) {
+                global_F[j] -= global_A[j * num_of_points + i] * boundary_condition(i, &out);
+                global_A[i * num_of_points + j] = 0;
+                global_A[j * num_of_points + i] = 0;
+            }
+            global_A[i * num_of_points + i] = 1.0;
+            global_F[i] = boundary_condition(i, &out);
         }
-        global_A[i * num_of_points + i] = 1.0;
-        global_F[i] = boundary_condition(i, &out);
     }
 
 
@@ -250,7 +270,7 @@ static void generate_mesh(struct triangulateio *in, struct triangulateio *out)
      * neighbor list (n), be quiet (Q), area should be less than 0.1 (a.1)
      * and generate triangle for FEM (q).
      */
-    triangulate("pzceQna.01q", in, out, (struct triangulateio *) NULL);
+    triangulate("pzceQna.0001q", in, out, (struct triangulateio *) NULL);
 }
 
 static REAL exact_solution(uint point_id, struct triangulateio *out)
