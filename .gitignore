@@ -51,6 +51,5 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
-# bin folder
-bin/poisson
-src/triangle/tricall
+.clang
+*.msh

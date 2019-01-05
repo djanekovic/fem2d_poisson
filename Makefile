@@ -1,13 +1,16 @@
-SRC = ./src/
-BIN = ./bin/
-CC  = gcc
-RM = /bin/rm
-CFLAGS = -O3 -lm -Wall -Wextra -llapacke
+PETSC_DIR = /home/darko/FEM/petsc
 
-all: $(BIN)poisson
+include ${PETSC_DIR}/lib/petsc/conf/variables
+include ${PETSC_DIR}/lib/petsc/conf/rules
 
-$(BIN)poisson: $(SRC)main.c $(SRC)util.c
-	$(CC) $(CFLAGS) -o $(BIN)poisson $(SRC)main.c $(SRC)util.c $(SRC)triangle/triangle.o
+.DEFAULT_GOAL := poisson
 
-clean:
-	$(RM) -f $(BIN)poisson
+poisson: poisson.o chkopts
+	-${CLINKER} poisson.o -g ${PETSC_LIB}
+	${RM} poisson.o
+
+run: a.out square.msh
+	${PETSC_DIR}/${PETSC_ARCH}/bin/mpiexec -n 2 ./a.out -dim 2
+
+mesh: square.geo
+	gmsh -2 square.geo
