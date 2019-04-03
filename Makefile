@@ -1,13 +1,16 @@
-SRC = ./src/
-BIN = ./bin/
+PROJECT = poisson
+SRC = $(wildcard ./src/*.c)
+OBJ = $(SRC:.c=.o)
 CC  = gcc
 RM = /bin/rm
-CFLAGS = -O3 -lm -Wall -Wextra -llapacke
+CFLAGS = -g -lm -Wall -Wextra
+LDFLAGS = -llapacke -ltriangle
 
-all: $(BIN)poisson
+all: $(PROJECT)
 
-$(BIN)poisson: $(SRC)main.c $(SRC)util.c
-	$(CC) $(CFLAGS) -o $(BIN)poisson $(SRC)main.c $(SRC)util.c $(SRC)triangle/triangle.o
+$(PROJECT): $(OBJ)
+	@mkdir -p ./bin
+	$(CC) $(CFLAGS) -o ./bin/$@ $^ $(LDFLAGS)
 
 clean:
-	$(RM) -f $(BIN)poisson
+	$(RM) -f $(OBJ)
